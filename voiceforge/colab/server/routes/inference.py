@@ -41,16 +41,13 @@ async def run_inference(
             "--input-path", input_path,
             "--output-path", output_path,
             "--pth-path", pth_path,
+            "--index-path", index_path or "",
             "--pitch", str(pitch),
             "--f0-method", f0_method,
             "--index-rate", str(index_rate),
-            "--filter-radius", str(filter_radius),
             "--volume-envelope", str(volume_envelope),
             "--protect", str(protect_voiceless),
         ]
-
-        if index_path:
-            cmd.extend(["--index-path", index_path])
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 

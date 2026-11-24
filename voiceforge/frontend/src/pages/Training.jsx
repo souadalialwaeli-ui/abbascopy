@@ -61,7 +61,11 @@ export default function Training() {
   const handleExtract = async () => {
     setIsLoading(true);
     try {
-      await api.extractFeatures({ model_name: config.model_name, f0_method: config.f0_method });
+      await api.extractFeatures({
+        model_name: config.model_name,
+        f0_method: config.f0_method,
+        sample_rate: parseInt(config.sample_rate) || 40000
+      });
       toast.success('تم استخراج الميزات');
       setStep('train');
     } catch (err) {

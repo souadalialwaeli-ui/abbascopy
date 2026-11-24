@@ -20,6 +20,7 @@ class PreprocessConfig(BaseModel):
 class ExtractConfig(BaseModel):
     model_name: str
     f0_method: str = "rmvpe"
+    sample_rate: int = 40000
 
 class TrainConfig(BaseModel):
     model_name: str
@@ -94,6 +95,7 @@ async def extract_features(config: ExtractConfig):
             "extract",
             "--model-name", config.model_name,
             "--f0-method", config.f0_method,
+            "--sample-rate", str(config.sample_rate),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
 
@@ -129,10 +131,10 @@ async def start_training(config: TrainConfig, request: Request):
                 sys.executable, os.path.join(APPLIO_DIR, "core.py"),
                 "train",
                 "--model-name", config.model_name,
-                "--sample-rate", config.sample_rate,
-                "--epochs", str(config.epochs),
+                "--sample-rate", str(config.sample_rate),
+                "--total-epoch", str(config.epochs),
                 "--batch-size", str(config.batch_size),
-                "--save-every", str(config.save_frequency),
+                "--save-every-epoch", str(config.save_frequency),
             ]
 
             process = subprocess.Popen(
