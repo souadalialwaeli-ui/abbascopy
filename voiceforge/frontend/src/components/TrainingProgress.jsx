@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import wsService from '../services/websocket';
-import { Activity, StopCircle, RefreshCw } from 'lucide-react';
+import { Activity, StopCircle, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -46,13 +46,14 @@ export default function TrainingProgress() {
         const total = data.total_epochs || data.totalEpochs || 100;
         const epoch = data.epoch || 0;
         const pct = data.percentage ?? (total > 0 ? (epoch / total) * 100 : 0);
+        const isMsgFailed = data.message && data.message.toLowerCase().includes('failed');
         setProgress(prev => ({
           ...prev,
           ...data,
           epoch,
           totalEpochs: total,
           percentage: Math.min(100, Math.max(0, pct)),
-          status: data.status || (data.active ? 'training' : (prev.status === 'training' ? 'completed' : prev.status)),
+          status: isMsgFailed ? 'error' : (data.status || (data.active ? 'training' : (prev.status === 'training' ? 'completed' : prev.status))),
           active: !!data.active,
         }));
       } catch {
@@ -86,27 +87,39 @@ export default function TrainingProgress() {
     extracting: 'استخراج الميزات...',
     training: 'جاري التدريب...',
     completed: 'اكتمل التدريب بنجاح ✓',
-    error: 'خطأ في التدريب ✗',
+    error: 'فشل التدريب ✗',
   };
 
-  const isTrainingActive = progress.status === 'training' || progress.active;
-  const isAnyActive = ['preprocessing', 'extracting', 'training'].includes(progress.status) || progress.active;
+  const isError = progress.status === 'error' || (progress.message && progress.message.toLowerCase().includes('failed'));
+  const isTrainingActive = (progress.status === 'training' || progress.active) && !isError;
+  const isCompleted = progress.status === 'completed' && !isError;
+  const isAnyActive = ['preprocessing', 'extracting', 'training'].includes(progress.status) || (progress.active && !isError);
 
   return (
     <div className={`rounded-xl p-4 space-y-3 transition-all border ${
-      isTrainingActive
+      isError
+        ? 'bg-danger/10 border-danger/30'
+        : isTrainingActive
         ? 'bg-primary/10 border-primary/30 shadow-lg shadow-primary/10'
+        : isCompleted
+        ? 'bg-success/10 border-success/30'
         : 'bg-surface border-surface-light'
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Activity
-            size={18}
-            className={isAnyActive ? 'text-primary animate-pulse' : 'text-text-muted'}
-          />
-          <h3 className="text-sm font-semibold">
-            {statusLabels[progress.status] || progress.status}
+          {isError ? (
+            <AlertCircle size={18} className="text-danger" />
+          ) : (
+            <Activity
+              size={18}
+              className={isAnyActive ? 'text-primary animate-pulse' : isCompleted ? 'text-success' : 'text-text-muted'}
+            />
+          )}
+          <h3 className={`text-sm font-semibold ${
+            isError ? 'text-danger' : isCompleted ? 'text-success' : ''
+          }`}>
+            {isError ? 'فشل التدريب ✗' : isCompleted ? 'اكتمل التدريب بنجاح ✓' : (statusLabels[progress.status] || progress.status)}
           </h3>
         </div>
         {isAnyActive && (
@@ -121,8 +134,20 @@ export default function TrainingProgress() {
         )}
       </div>
 
+      {/* Error state */}
+      {isError && (
+        <div className="bg-danger/10 border border-danger/20 rounded-lg p-3 text-xs space-y-2">
+          <p className="font-mono text-danger font-medium text-[11px]" dir="ltr">
+            {progress.message}
+          </p>
+          <p className="text-text-muted leading-relaxed">
+            سبب الفشل: لم يتم تنزيل النماذج المسبقة (Pretrained Base Models مثل f0G40k/f0D40k) داخل بيئة كولاب. قم بتشغيل خلية التحميل في كولاب لحل المشكلة فوراً.
+          </p>
+        </div>
+      )}
+
       {/* Progress Bar & Details during Training */}
-      {isTrainingActive ? (
+      {isTrainingActive && (
         <div className="space-y-2 pt-1">
           {/* Epoch & Percentage Header */}
           <div className="flex justify-between items-center text-xs">
@@ -159,9 +184,12 @@ export default function TrainingProgress() {
             </div>
           )}
         </div>
-      ) : progress.message ? (
+      )}
+
+      {/* Idle / general message if not error or active */}
+      {!isTrainingActive && !isError && progress.message && (
         <p className="text-xs text-text-muted">{progress.message}</p>
-      ) : null}
+      )}
     </div>
   );
 }
