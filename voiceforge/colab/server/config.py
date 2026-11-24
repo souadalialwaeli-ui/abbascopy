@@ -20,7 +20,7 @@ DRIVE_DIR = "/content/drive/MyDrive/VoiceForge"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IS_GPU = torch.cuda.is_available()
 GPU_NAME = torch.cuda.get_device_name(0) if IS_GPU else "N/A"
-GPU_MEMORY = f"{torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB" if IS_GPU else "N/A"
+GPU_MEMORY = f"{getattr(torch.cuda.get_device_properties(0), 'total_memory', 0) / 1024**3:.1f} GB" if IS_GPU else "N/A"
 
 # Firebase (optional)
 FIREBASE_DB_URL = os.environ.get("FIREBASE_DB_URL", "")
