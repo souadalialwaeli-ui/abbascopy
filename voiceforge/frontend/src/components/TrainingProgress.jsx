@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import wsService from '../services/websocket';
-import { Activity, StopCircle } from 'lucide-react';
+import { Activity, StopCircle, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -13,21 +13,70 @@ export default function TrainingProgress() {
     status: 'idle', // idle | preprocessing | extracting | training | completed | error
     message: '',
     percentage: 0,
+    active: false,
   });
 
   useEffect(() => {
+    let isMounted = true;
+
+    // 1. WebSocket listener
     const unsub = wsService.on('training_progress', (data) => {
-      setProgress(prev => ({ ...prev, ...data }));
+      if (!isMounted || !data) return;
+      setProgress(prev => {
+        const total = data.total_epochs || data.totalEpochs || prev.totalEpochs || 0;
+        const epoch = data.epoch ?? prev.epoch ?? 0;
+        const pct = data.percentage ?? (total > 0 ? (epoch / total) * 100 : 0);
+        return {
+          ...prev,
+          ...data,
+          epoch,
+          totalEpochs: total,
+          percentage: Math.min(100, Math.max(0, pct)),
+          status: data.status || (data.active ? 'training' : prev.status),
+          active: data.active ?? prev.active,
+        };
+      });
     });
-    return unsub;
+
+    // 2. HTTP Polling fallback (vital for Cloudflare tunnels / mobile networks)
+    const pollStatus = async () => {
+      try {
+        const data = await api.getTrainingStatus();
+        if (!isMounted || !data) return;
+        const total = data.total_epochs || data.totalEpochs || 100;
+        const epoch = data.epoch || 0;
+        const pct = data.percentage ?? (total > 0 ? (epoch / total) * 100 : 0);
+        setProgress(prev => ({
+          ...prev,
+          ...data,
+          epoch,
+          totalEpochs: total,
+          percentage: Math.min(100, Math.max(0, pct)),
+          status: data.status || (data.active ? 'training' : (prev.status === 'training' ? 'completed' : prev.status)),
+          active: !!data.active,
+        }));
+      } catch {
+        // quiet ignore on background polling error
+      }
+    };
+
+    pollStatus();
+    const timer = setInterval(pollStatus, 1500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+      unsub();
+    };
   }, []);
 
   const handleStop = async () => {
     try {
       await api.stopTraining();
       toast.success('تم إيقاف التدريب');
+      setProgress(prev => ({ ...prev, active: false, status: 'idle' }));
     } catch (err) {
-      toast.error('فشل إيقاف التدريب');
+      toast.error('فشل إيقاف التدريب: ' + (err.message || ''));
     }
   };
 
@@ -36,48 +85,83 @@ export default function TrainingProgress() {
     preprocessing: 'معالجة مسبقة...',
     extracting: 'استخراج الميزات...',
     training: 'جاري التدريب...',
-    completed: 'مكتمل ✓',
-    error: 'خطأ ✗',
+    completed: 'اكتمل التدريب بنجاح ✓',
+    error: 'خطأ في التدريب ✗',
   };
 
-  const isActive = ['preprocessing', 'extracting', 'training'].includes(progress.status);
+  const isTrainingActive = progress.status === 'training' || progress.active;
+  const isAnyActive = ['preprocessing', 'extracting', 'training'].includes(progress.status) || progress.active;
 
   return (
-    <div className="bg-surface rounded-xl p-4 space-y-3">
+    <div className={`rounded-xl p-4 space-y-3 transition-all border ${
+      isTrainingActive
+        ? 'bg-primary/10 border-primary/30 shadow-lg shadow-primary/10'
+        : 'bg-surface border-surface-light'
+    }`}>
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Activity size={18} className={isActive ? 'text-primary animate-pulse' : 'text-text-muted'} />
-          <h3 className="text-sm font-semibold">{statusLabels[progress.status] || progress.status}</h3>
+          <Activity
+            size={18}
+            className={isAnyActive ? 'text-primary animate-pulse' : 'text-text-muted'}
+          />
+          <h3 className="text-sm font-semibold">
+            {statusLabels[progress.status] || progress.status}
+          </h3>
         </div>
-        {isActive && (
-          <button onClick={handleStop} className="text-danger hover:text-danger/80 transition-colors">
-            <StopCircle size={20} />
+        {isAnyActive && (
+          <button
+            onClick={handleStop}
+            title="إيقاف التدريب"
+            className="text-danger hover:text-danger/80 p-1 rounded-lg hover:bg-danger/10 transition-colors flex items-center gap-1 text-xs"
+          >
+            <StopCircle size={18} />
+            <span>إيقاف</span>
           </button>
         )}
       </div>
 
-      {progress.message && (
-        <p className="text-xs text-text-muted">{progress.message}</p>
-      )}
-
-      {progress.status === 'training' && (
-        <>
-          <div className="flex justify-between text-xs text-text-muted">
-            <span>الحقبة {progress.epoch} / {progress.totalEpochs}</span>
-            <span>{Math.round(progress.percentage)}%</span>
+      {/* Progress Bar & Details during Training */}
+      {isTrainingActive ? (
+        <div className="space-y-2 pt-1">
+          {/* Epoch & Percentage Header */}
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-text font-medium flex items-center gap-1">
+              الحقبة: <span className="text-primary font-bold font-mono">{progress.epoch}</span> / {progress.totalEpochs || 100}
+            </span>
+            <span className="font-bold text-primary font-mono text-sm">
+              {Math.round(progress.percentage || 0)}%
+            </span>
           </div>
-          <div className="h-2 bg-surface-light rounded-full overflow-hidden">
+
+          {/* Progress Bar */}
+          <div className="h-3 bg-surface-light rounded-full overflow-hidden p-0.5 border border-white/5 relative">
             <div
-              className="h-full bg-primary rounded-full transition-all duration-300"
-              style={{ width: `${progress.percentage}%` }}
+              className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-300"
+              style={{
+                width: `${Math.max(progress.percentage || 0, progress.epoch === 0 ? 5 : 0)}%`
+              }}
             />
           </div>
-          <div className="flex gap-4 text-xs text-text-muted">
-            <span>خسارة G: <span className="text-text font-mono">{progress.loss_g?.toFixed(4)}</span></span>
-            <span>خسارة D: <span className="text-text font-mono">{progress.loss_d?.toFixed(4)}</span></span>
-          </div>
-        </>
-      )}
+
+          {/* Losses if available */}
+          {(progress.loss_g > 0 || progress.loss_d > 0) && (
+            <div className="flex gap-4 text-xs text-text-muted pt-1">
+              <span>خسارة G: <span className="text-text font-mono font-medium">{progress.loss_g?.toFixed(4)}</span></span>
+              <span>خسارة D: <span className="text-text font-mono font-medium">{progress.loss_d?.toFixed(4)}</span></span>
+            </div>
+          )}
+
+          {/* Recent Server Log Message */}
+          {progress.message && (
+            <div className="bg-black/30 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-text-muted truncate max-w-full" dir="ltr">
+              {progress.message}
+            </div>
+          )}
+        </div>
+      ) : progress.message ? (
+        <p className="text-xs text-text-muted">{progress.message}</p>
+      ) : null}
     </div>
   );
 }
