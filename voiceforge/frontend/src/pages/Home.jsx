@@ -34,7 +34,7 @@ export default function Home() {
               لبدء الاستخدام، افتح Notebook في Google Colab وشغّل الخادم
             </p>
             <a
-              href="https://colab.research.google.com"
+              href="https://colab.research.google.com/github/souadalialwaeli-ui/abbascopy/blob/main/voiceforge/colab/VoiceForge_Server.ipynb"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary-light"
